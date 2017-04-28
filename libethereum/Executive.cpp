@@ -141,6 +141,25 @@ string StandardTrace::json(bool _styled) const
 	return _styled ? Json::StyledWriter().write(m_trace) : Json::FastWriter().write(m_trace);
 }
 
+namespace
+{
+
+State& initIntermediateState(State& _s, Block const& _block, unsigned _txIndex, BlockChain const& _bc)
+{
+	_s = _block.state();
+	u256 const rootHash = _block.stateRootBeforeTx(_txIndex);
+	if (rootHash)
+		_s.setRoot(rootHash);
+	else
+	{
+		_s.setRoot(_block.stateRootBeforeTx(0));
+		_s.executeBlockTransactions(_block, _txIndex, _bc.lastHashes(_block.info().parentHash()), *_bc.sealEngine());
+	}
+	return _s;
+}
+
+}
+
 Executive::Executive(Block& _s, BlockChain const& _bc, unsigned _level):
 	m_s(_s.mutableState()),
 	m_envInfo(_s.info(), _bc.lastHashes(_s.info().parentHash())),
@@ -158,19 +177,11 @@ Executive::Executive(Block& _s, LastHashes const& _lh, unsigned _level):
 }
 
 Executive::Executive(State& _s, Block const& _block, unsigned _txIndex, BlockChain const& _bc, unsigned _level):
-	m_s(_s = _block.state()),
+	m_s(initIntermediateState(_s, _block, _txIndex, _bc)),
 	m_envInfo(_block.info(), _bc.lastHashes(_block.info().parentHash()), _txIndex ? _block.receipt(_txIndex - 1).gasUsed() : 0),
 	m_depth(_level),
 	m_sealEngine(*_bc.sealEngine())
 {
-	u256 const rootHash = _block.stateRootBeforeTx(_txIndex);
-	if (rootHash)
-		m_s.setRoot(rootHash);
-	else
-	{
-		m_s.setRoot(_block.stateRootBeforeTx(0));
-		m_s.executeBlockTransactions(_block, _txIndex, _bc.lastHashes(_block.info().parentHash()), *_bc.sealEngine());
-	}
 }
 
 u256 Executive::gasUsed() const
